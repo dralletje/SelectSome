@@ -96,9 +96,6 @@ let get_current_range = (selection) => {
   }
 };
 
-/** @type {Array<Range>} */
-let selection_expansion_stack = [];
-
 /**
  * @param {DocumentOrShadowRoot} document
  * @returns {Selection}
@@ -140,10 +137,24 @@ let get_active_element = (document) => {
   }
 };
 
+/**
+ * This is the "state" of this extension, keeping track of the selections for every ctrl+a and ctrl+shift+a press.
+ * @type {Array<Range>}
+ */
+let selection_expansion_stack = [];
+
+let config = {
+  disabled: false,
+};
+
+let is_mac = navigator.platform.match(/(Mac|iPhone|iPod|iPad)/i);
+
 document.addEventListener(
   "keydown",
   function BetterSelectAllKeyboardListener(event) {
-    if (event.key === "a" && event.metaKey) {
+    if (config.disabled) return;
+
+    if (event.key === "a" && (is_mac ? event.metaKey : event.ctrlKey)) {
       if (event.defaultPrevented) return;
 
       let activeElement = get_active_element(document);
@@ -245,3 +256,53 @@ document.addEventListener(
     }
   },
 );
+
+try {
+  // @ts-ignore
+  const browser = /** @type {import("webextension-polyfill-ts").Browser} */ (
+    globalThis.browser
+  );
+  /**
+   * @param {{ type: string, [key: string]: any }} message
+   */
+  let send_chrome_message = async (message) => {
+    let { type, value } = await browser.runtime.sendMessage(message);
+    if (type === "resolve") {
+      return value;
+    } else {
+      let err = new Error(value.message);
+      err.stack = value.stack;
+      // err.stack = [
+      //   ...x.value.stack.split('\n'),
+      //   'From postMessage to background page',
+      //   ...stack,
+      // ].join('\n');
+      throw err;
+    }
+  };
+  /**
+   * @returns {Promise<{
+   *  disabled: boolean,
+   * }>}
+   */
+  let get_host_config_local = async () => {
+    return await send_chrome_message({
+      type: "get_windowed_config",
+    });
+  };
+  let check_disabled_state = async () => {
+    try {
+      config = await get_host_config_local();
+    } catch (err) {
+      // prettier-ignore
+      console.warn(`[Windowed] Error while checking if windowed is enabled or not`, err)
+    }
+  };
+
+  check_disabled_state();
+
+  browser.runtime.onConnect.addListener(async (port) => {
+    port.postMessage({ type: "I_exists_ping" });
+    check_disabled_state();
+  });
+} catch (error) {}

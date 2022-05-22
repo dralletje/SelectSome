@@ -1,24 +1,30 @@
 {
-  "name": "SelectAll - ctrl+A like you've never experienced before",
-  "short_name": "SelectAll",
-  "description": "Changes ctrl+A to be actually useful",
+  "name": "Select Some - ctrl+A but useful",
+  "short_name": "Select Some",
+  "description": "ctrl+a like you've never experienced before",
   "developer": {
     "name": "Michiel Dral",
     "url": "https://dral.eu/"
   },
   "version": "1",
-  "manifest_version": 2,
-  "permissions": ["tabs", "<all_urls>"],
+  "manifest_version": 3,
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["*://*/*"],
   "applications": {
     "gecko": {
       "id": "{3ff7c9aa-7b4d-4b91-b76d-7db9e13f19f9}"
     }
   },
+  "background": {
+    "type": "module",
+    "service_worker": "Background/Background.js"
+  },
+  "action": {},
   "content_scripts": [
     {
       "run_at": "document_end",
       "matches": ["<all_urls>"],
-      "js": ["Content.js"],
+      "js": ["Vendor/browser-polyfill.min.js", "Content.js"],
       "all_frames": true
     }
   ],
