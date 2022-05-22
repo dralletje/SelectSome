@@ -64,9 +64,11 @@ export let tint_image = async (url, color) => {
 let _color_icon = async (url, _color) => {
   let { color, alpha } = find_and_replace_alpha(_color);
 
-  let image_bitmap = await createImageBitmap(await (await fetch(url)).blob());
+  let blob = await createImageBitmap(await (await fetch(url)).blob());
 
-  let canvas = new OffscreenCanvas(image_bitmap.width, image_bitmap.height);
+  let canvas = document.createElement("canvas");
+  canvas.width = blob.width;
+  canvas.height = blob.height;
 
   // Initaliase a 2-dimensional drawing context
   let ctx = canvas.getContext("2d");
@@ -74,17 +76,20 @@ let _color_icon = async (url, _color) => {
   let height = ctx.canvas.height;
 
   // create offscreen buffer,
-  let buffer = new OffscreenCanvas(image_bitmap.width, image_bitmap.height);
+  let buffer = document.createElement("canvas");
+  buffer.width = blob.width;
+  buffer.height = blob.height;
+
   let bx = buffer.getContext("2d");
   // fill offscreen buffer with the tint color
   bx.fillStyle = color;
   bx.fillRect(0, 0, buffer.width, buffer.height);
   // destination atop makes a result with an alpha channel identical to fg, but with all pixels retaining their original color *as far as I can tell*
   bx.globalCompositeOperation = "destination-atop";
-  bx.drawImage(image_bitmap, 0, 0);
+  bx.drawImage(blob, 0, 0);
 
   // to tint the image, draw it first
-  ctx.drawImage(image_bitmap, 0, 0);
+  ctx.drawImage(blob, 0, 0);
   ctx.drawImage(buffer, 0, 0);
 
   ctx.globalAlpha = alpha;

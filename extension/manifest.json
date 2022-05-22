@@ -7,19 +7,18 @@
     "url": "https://dral.eu/"
   },
   "version": "1",
-  "manifest_version": 3,
-  "permissions": ["tabs", "storage"],
-  "host_permissions": ["*://*/*"],
+  "manifest_version": 2,
+  "permissions": ["tabs", "storage", "<all_urls>"],
   "applications": {
     "gecko": {
       "id": "{3ff7c9aa-7b4d-4b91-b76d-7db9e13f19f9}"
     }
   },
   "background": {
-    "type": "module",
-    "service_worker": "Background/Background.js"
+    "scripts": ["Background/BackgroundEntry.js"],
+    "persistent": false
   },
-  "action": {},
+  "browser_action": {},
   "content_scripts": [
     {
       "run_at": "document_end",

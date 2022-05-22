@@ -82,12 +82,6 @@ let ping_content_script = async (tabId) => {
   }
 };
 
-let window = {
-  matchMedia: (x) => ({
-    matches: true,
-  }),
-};
-
 /**
  * Tries to figure out the default icon color
  * - Tries to use the current theme on firefox
@@ -122,7 +116,8 @@ let icon_theme_color = async (tab) => {
  * @param {any} properties
  */
 let notify_tab_state = async (tabId, properties) => {
-  browser.tabs.connect(tabId);
+  let port = browser.tabs.connect(tabId);
+  // port.postMessage(JSON.stringify({ method: 'notify', data: properties }))
 };
 
 /**
@@ -131,11 +126,11 @@ let notify_tab_state = async (tabId, properties) => {
  * @param {{ icon: ImageData, title: string }} action
  */
 let apply_browser_action = async (tabId, action) => {
-  await browser.action.setIcon({
+  await browser.browserAction.setIcon({
     tabId: tabId,
     imageData: action.icon,
   });
-  await browser.action.setTitle({
+  await browser.browserAction.setTitle({
     tabId: tabId,
     title: action.title,
   });
@@ -191,8 +186,6 @@ let update_button_on_tab = async (tab) => {
   // and show a specific icon and title for each of those.
   let host = new URL(tab.url).host;
   let config = await get_host_config(tab);
-  console.log(`host:`, host);
-  console.log(`config:`, config);
   if (config.disabled) {
     // DISABLED
     await apply_browser_action(tab.id, {
@@ -210,7 +203,7 @@ let update_button_on_tab = async (tab) => {
   }
 };
 
-browser.action.onClicked.addListener(async (tab) => {
+browser.browserAction.onClicked.addListener(async (tab) => {
   console.log("Hi");
   let host = new URL(tab.url).host;
   let { [host]: previous_config } = await browser.storage.sync.get(host);
