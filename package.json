@@ -25,5 +25,8 @@
   },
   "prettier": {
     "trailingComma": "all"
+  },
+  "dependencies": {
+    "webextension-polyfill-ts": "^0.26.0"
   }
 }

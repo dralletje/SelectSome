@@ -1,4 +1,3 @@
-// Import is not yet allowed in firefox, so for now I put tint_image in manifest.json
 import { tint_image } from "./tint_image.js";
 import { browser } from "../Vendor/Browser.js";
 
@@ -10,11 +9,6 @@ let browser_info_promise = browser.runtime.getBrowserInfo
 let is_firefox = browser_info_promise.then(
   (browser_info) => browser_info.name === "Firefox",
 );
-
-/**
- * @typedef WindowedMode
- * @type {"fullscreen" | "windowed" | "in-window" | "fullscreen" | "ask"}
- */
 
 /** @param {import("webextension-polyfill-ts").Tabs.Tab} tab */
 let get_host_config = async (tab) => {
@@ -82,10 +76,22 @@ let ping_content_script = async (tabId) => {
   }
 };
 
-let window = {
-  matchMedia: (x) => ({
-    matches: true,
-  }),
+/**
+ * Sooooo this is pretty silly, but I can't use `window.matchMedia` in MV3 service workers,
+ * so I have to execute the script in the page... Hope the reviewers don't mind me adding
+ * "scripting" permission just for this :P
+ * @param {import("webextension-polyfill-ts").Tabs.Tab} tab
+ * @param {string} query
+ */
+let matchMedia = async (tab, query) => {
+  let x = await browser.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: (query) => {
+      return window.matchMedia(query).matches;
+    },
+    args: [query],
+  });
+  return { matches: x[0].result };
 };
 
 /**
@@ -104,12 +110,12 @@ let icon_theme_color = async (tab) => {
     if (theme?.colors?.popup_text != null) {
       return theme.colors.popup_text;
     }
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
+    return (await matchMedia(tab, "(prefers-color-scheme: dark)")).matches
       ? "rgba(255,255,255,0.8)"
       : "rgb(250, 247, 252)";
   }
 
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
+  return (await matchMedia(tab, "(prefers-color-scheme: dark)")).matches
     ? "rgba(255,255,255,0.8)"
     : "#5f6368";
 };
@@ -153,7 +159,7 @@ let update_button_on_tab = async (tab) => {
   if (has_contentscript_active === false && tab.url === "about:blank") {
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, await icon_theme_color(tab)),
-      title: `Windowed`,
+      title: `Select Some`,
     });
     return;
   }
@@ -179,43 +185,44 @@ let update_button_on_tab = async (tab) => {
   // So if the tab is loaded, and it is not an extra secure domain,
   // it means windowed is not loaded for some reason. So I tell that.
   if (tab.status === "complete" && has_contentscript_active === false) {
-    await apply_browser_action(tab.id, {
-      icon: await tint_image(BROWSERACTION_ICON, "#D0021B"),
-      title:
-        "This page needs to be reloaded for SelectSome to activate. Click here to reload.",
+    // await apply_browser_action(tab.id, {
+    //   icon: await tint_image(BROWSERACTION_ICON, "#D0021B"),
+    //   title:
+    //     "This page needs to be reloaded for SelectSome to activate. Click here to reload.",
+    // });
+
+    // Instead of asking the user to reload the page (as they should with Windowed),
+    // here I can just inject the script and it'll work! :D
+    browser.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["Content.js"],
     });
-    return;
   }
 
   // From here I figure out what the user has configured for Windowed on this domain,
   // and show a specific icon and title for each of those.
   let host = new URL(tab.url).host;
   let config = await get_host_config(tab);
-  console.log(`host:`, host);
-  console.log(`config:`, config);
   if (config.disabled) {
     // DISABLED
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, "rgba(133, 133, 133, 0.5)"),
-      title: `Windowed is disabled on ${host}, click to re-activate`,
+      title: `Select Some is disabled on ${host}, click to re-activate`,
     });
     await notify_tab_state(tab.id, { disabled: true });
   } else {
     // ENABLED FUNCTION
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, await icon_theme_color(tab)),
-      title: `Windowed is enabled on ${host}`,
+      title: `Select Some is enabled on ${host}`,
     });
     await notify_tab_state(tab.id, { disabled: false });
   }
 };
 
 browser.action.onClicked.addListener(async (tab) => {
-  console.log("Hi");
   let host = new URL(tab.url).host;
   let { [host]: previous_config } = await browser.storage.sync.get(host);
-  console.log(`host:`, host);
-  console.log(`previous_config:`, previous_config);
   await browser.storage.sync.set({
     [host]: {
       ...previous_config,

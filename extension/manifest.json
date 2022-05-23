@@ -1,5 +1,5 @@
 {
-  "name": "Select Some - ctrl+A but useful",
+  "name": "Select Some - ctrl+a but useful",
   "short_name": "Select Some",
   "description": "ctrl+a like you've never experienced before",
   "developer": {
@@ -8,7 +8,7 @@
   },
   "version": "1",
   "manifest_version": 3,
-  "permissions": ["tabs", "storage"],
+  "permissions": ["tabs", "storage", "scripting"],
   "host_permissions": ["*://*/*"],
   "applications": {
     "gecko": {
