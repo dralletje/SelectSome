@@ -157,6 +157,8 @@ document.addEventListener(
     if (event.key === "a" && (is_mac ? event.metaKey : event.ctrlKey)) {
       if (event.defaultPrevented) return;
 
+      if (event.repeat) return;
+
       let activeElement = get_active_element(document);
       if (
         activeElement.tagName === "TEXTAREA" ||
