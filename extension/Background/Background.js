@@ -128,7 +128,8 @@ let icon_theme_color = async (tab) => {
  * @param {any} properties
  */
 let notify_tab_state = async (tabId, properties) => {
-  browser.tabs.connect(tabId);
+  let port = browser.tabs.connect(tabId);
+  port.disconnect();
 };
 
 /**
