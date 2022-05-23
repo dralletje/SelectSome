@@ -1,8 +1,10 @@
 import { tint_image } from "./tint_image.js";
 import { browser } from "../Vendor/Browser.js";
+import { clear, get, set } from "../Vendor/idb-keyval.js";
 
 let BROWSERACTION_ICON = "/Icons/Icon_32.png";
 
+let async = async (async) => async();
 let browser_info_promise = browser.runtime.getBrowserInfo
   ? browser.runtime.getBrowserInfo()
   : Promise.resolve({ name: "Chrome" });
@@ -84,14 +86,40 @@ let ping_content_script = async (tabId) => {
  * @param {string} query
  */
 let matchMedia = async (tab, query) => {
-  let x = await browser.scripting.executeScript({
+  let script_results = await browser.scripting.executeScript({
     target: { tabId: tab.id },
     func: (query) => {
       return window.matchMedia(query).matches;
     },
     args: [query],
   });
-  return { matches: x[0].result };
+
+  return { matches: script_results[0].result };
+};
+
+/**
+ * Lame variant of the above `matchMedia`, because the above always needs to wait till the page is loaded.
+ * @param {import("webextension-polyfill-ts").Tabs.Tab} tab
+ * @param {string} query
+ */
+let matchMedia_faster = async (tab, query) => {
+  let key = `matchMedia(${query})`;
+  let fast_result = await get(key);
+
+  if (fast_result != null) {
+    // Still fetch (and more importantly, update the cache!)
+    async(async () => {
+      let result = await matchMedia(tab, query);
+      await set({ [key]: result });
+    });
+
+    return fast_result;
+  }
+
+  let result = await matchMedia(tab, query);
+
+  set({ [key]: result });
+  return result;
 };
 
 /**
@@ -110,12 +138,13 @@ let icon_theme_color = async (tab) => {
     if (theme?.colors?.popup_text != null) {
       return theme.colors.popup_text;
     }
-    return (await matchMedia(tab, "(prefers-color-scheme: dark)")).matches
+    return (await matchMedia_faster(tab, "(prefers-color-scheme: dark)"))
+      .matches
       ? "rgba(255,255,255,0.8)"
       : "rgb(250, 247, 252)";
   }
 
-  return (await matchMedia(tab, "(prefers-color-scheme: dark)")).matches
+  return (await matchMedia_faster(tab, "(prefers-color-scheme: dark)")).matches
     ? "rgba(255,255,255,0.8)"
     : "#5f6368";
 };
@@ -235,6 +264,8 @@ browser.action.onClicked.addListener(async (tab) => {
 
 // Events where I refresh the browser action button
 browser.runtime.onInstalled.addListener(async () => {
+  clear(); // Clear cache and colors and everything
+
   let all_tabs = await browser.tabs.query({});
   for (let tab of all_tabs) {
     await update_button_on_tab(tab);

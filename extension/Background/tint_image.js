@@ -1,3 +1,5 @@
+import { get, set } from "../Vendor/idb-keyval.js";
+
 /**
  * @param {string} color
  * @returns {{ color: string, alpha: number }}
@@ -37,9 +39,6 @@ let find_and_replace_alpha = (color) => {
   }
 };
 
-/** @type {Map<string, Promise<ImageData>>} */
-let color_icon_cache = new Map();
-
 /**
  * Colorize an image with the use of a canvas
  * @param {string} url
@@ -47,19 +46,23 @@ let color_icon_cache = new Map();
  * @returns {Promise<ImageData>}
  */
 export let tint_image = async (url, color) => {
-  let identifier = `${url}@${color}`;
-  if (color_icon_cache.has(identifier)) {
-    return color_icon_cache.get(identifier);
+  let identifier = `tinted_${url}@${color}`;
+
+  let matched = await get(identifier);
+
+  if (matched) {
+    return matched;
   } else {
-    let icon = _color_icon(url, color);
-    color_icon_cache.set(identifier, icon);
-    return await icon;
+    let icon = await _color_icon(url, color);
+    set(identifier, icon);
+    return icon;
   }
 };
 
 /**
  * @param {string} url
  * @param {string} _color
+ * @returns {Promise<ImageData>}
  */
 let _color_icon = async (url, _color) => {
   let { color, alpha } = find_and_replace_alpha(_color);
