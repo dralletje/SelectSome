@@ -162,7 +162,8 @@ let update_button_on_tab = async (tab) => {
       tab.url.match(/^chrome:\/\//) ||
       tab.url.match(/^edge:\/\//) ||
       tab.url.match(/^https?:\/\/chrome\.google\.com/) ||
-      tab.url.match(/^https?:\/\/support\.mozilla\.org/))
+      tab.url.match(/^https?:\/\/support\.mozilla\.org/) ||
+      tab.url.match(/^https?:\/\/addons.mozilla.org/))
   ) {
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, "rgba(208, 2, 27, .22)"),
@@ -174,12 +175,27 @@ let update_button_on_tab = async (tab) => {
   // So if the tab is loaded, and it is not an extra secure domain,
   // it means windowed is not loaded for some reason. So I tell that.
   if (tab.status === "complete" && has_contentscript_active === false) {
-    await apply_browser_action(tab.id, {
-      icon: await tint_image(BROWSERACTION_ICON, "#D0021B"),
-      title:
-        "This page needs to be reloaded for SelectSome to activate. Click here to reload.",
-    });
-    return;
+    // await apply_browser_action(tab.id, {
+    //   icon: await tint_image(BROWSERACTION_ICON, "#D0021B"),
+    //   title:
+    //     "This page needs to be reloaded for SelectSome to activate. Click here to reload.",
+    // });
+    // return;
+
+    // Instead of asking the user to reload the page (as they should with Windowed),
+    // here I can just inject the script and it'll work! :D
+    try {
+      await browser.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["Content.js"],
+      });
+    } catch (error) {
+      // if it doesn't work... I guess I'll just show the error message
+      await apply_browser_action(tab.id, {
+        icon: await tint_image(BROWSERACTION_ICON, "rgba(208, 2, 27, .22)"),
+        title: `For security reasons, SelectSome is not supported on this domain (${tab.url}).`,
+      });
+    }
   }
 
   // From here I figure out what the user has configured for Windowed on this domain,
