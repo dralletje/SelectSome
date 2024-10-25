@@ -1,5 +1,3 @@
-import { get, set } from "../Vendor/idb-keyval.js";
-
 /**
  * @param {string} color
  * @returns {{ color: string, alpha: number }}
@@ -39,6 +37,21 @@ let find_and_replace_alpha = (color) => {
   }
 };
 
+/** @type {Map<string, Promise<ImageData>>} */
+let color_icon_cache = new Map();
+
+/**
+ * @template T
+ * @param {T} x
+ * @returns {NonNullable<T>}
+ */
+let notnull = (x) => {
+  if (x == null) {
+    throw new Error("Unexpected null");
+  }
+  return x;
+};
+
 /**
  * Colorize an image with the use of a canvas
  * @param {string} url
@@ -46,23 +59,19 @@ let find_and_replace_alpha = (color) => {
  * @returns {Promise<ImageData>}
  */
 export let tint_image = async (url, color) => {
-  let identifier = `tinted_${url}@${color}`;
-
-  let matched = await get(identifier);
-
-  if (matched) {
-    return matched;
+  let identifier = `${url}@${color}`;
+  if (color_icon_cache.has(identifier)) {
+    return notnull(color_icon_cache.get(identifier));
   } else {
-    let icon = await _color_icon(url, color);
-    set(identifier, icon);
-    return icon;
+    let icon = _color_icon(url, color);
+    color_icon_cache.set(identifier, icon);
+    return await icon;
   }
 };
 
 /**
  * @param {string} url
  * @param {string} _color
- * @returns {Promise<ImageData>}
  */
 let _color_icon = async (url, _color) => {
   let { color, alpha } = find_and_replace_alpha(_color);
@@ -72,13 +81,13 @@ let _color_icon = async (url, _color) => {
   let canvas = new OffscreenCanvas(image_bitmap.width, image_bitmap.height);
 
   // Initaliase a 2-dimensional drawing context
-  let ctx = canvas.getContext("2d");
+  let ctx = notnull(canvas.getContext("2d"));
   let width = ctx.canvas.width;
   let height = ctx.canvas.height;
 
   // create offscreen buffer,
   let buffer = new OffscreenCanvas(image_bitmap.width, image_bitmap.height);
-  let bx = buffer.getContext("2d");
+  let bx = notnull(buffer.getContext("2d"));
   // fill offscreen buffer with the tint color
   bx.fillStyle = color;
   bx.fillRect(0, 0, buffer.width, buffer.height);

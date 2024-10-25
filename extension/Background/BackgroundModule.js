@@ -1,8 +1,14 @@
-import { tint_image } from "./tint_image.js";
-import { browser } from "../Vendor/Browser.js";
-import { clear, get, set } from "../Vendor/idb-keyval.js";
+import { tint_image } from "./utils/tint_image.js";
+import { matchMedia } from "./utils/matchMedia/matchMedia.js";
+import { ping_content_script } from "./utils/ping_content_script.js";
+import { registerMethod } from "./utils/extensionRPC.js";
+
+// import { browser } from "../Browser/BackgroundBrowser.js";
+let browser = chrome;
 
 let BROWSERACTION_ICON = "/Icons/Icon_32.png";
+let NEEDS_RELOAD_TITLE =
+  "This page needs to be reloaded for SelectSome to activate. Click here to reload.";
 
 let async = async (async) => async();
 let browser_info_promise = browser.runtime.getBrowserInfo
@@ -12,8 +18,12 @@ let is_firefox = browser_info_promise.then(
   (browser_info) => browser_info.name === "Firefox",
 );
 
-/** @param {import("webextension-polyfill-ts").Tabs.Tab} tab */
+/** @param {chrome.tabs.Tab} tab */
 let get_host_config = async (tab) => {
+  if (tab.url == null) {
+    throw new Error("tab.url == null");
+  }
+
   let host = new URL(tab.url).host;
   let config = (await browser.storage.sync.get(host))[host];
   return {
@@ -22,111 +32,19 @@ let get_host_config = async (tab) => {
   };
 };
 
-/**
- * Wrapper to do some basic routing on extension messaging
- * @param {string} type
- * @param {(message: any, sender: import("webextension-polyfill-ts").Runtime.MessageSender) => Promise<any>} fn
- * @return {void}
- */
-let onMessage = (type, fn) => {
-  browser.runtime.onMessage.addListener((message, sender) => {
-    if (message?.type === type) {
-      return fn(message, sender)
-        .then((result) => {
-          return { type: "resolve", value: result };
-        })
-        .catch((err) => {
-          return {
-            type: "reject",
-            value: { message: err.message, stack: err.stack },
-          };
-        });
-    }
-  });
-};
+registerMethod("get_selectsome_config", async (message, sender) => {
+  if (sender.tab == null) {
+    throw new Error("sender.tab == null");
+  }
 
-onMessage("get_windowed_config", async (message, sender) => {
   return await get_host_config(sender.tab);
 });
-
-/** @type {{ [tabid: number]: Promise<boolean> }} */
-let current_port_promises = {};
-/**
- * Check if we can connect with the Windowed content script in a tab
- * @param {number} tabId
- * @returns {Promise<boolean>}
- */
-let ping_content_script = async (tabId) => {
-  try {
-    if (current_port_promises[tabId] != null) {
-      return await current_port_promises[tabId];
-    } else {
-      current_port_promises[tabId] = new Promise((resolve, reject) => {
-        let port = browser.tabs.connect(tabId);
-        port.onMessage.addListener((message) => {
-          resolve(true);
-          port.disconnect();
-        });
-        port.onDisconnect.addListener((p) => {
-          resolve(false);
-        });
-      });
-      return await current_port_promises[tabId];
-    }
-  } finally {
-    delete current_port_promises[tabId];
-  }
-};
-
-/**
- * Sooooo this is pretty silly, but I can't use `window.matchMedia` in MV3 service workers,
- * so I have to execute the script in the page... Hope the reviewers don't mind me adding
- * "scripting" permission just for this :P
- * @param {import("webextension-polyfill-ts").Tabs.Tab} tab
- * @param {string} query
- */
-let matchMedia = async (tab, query) => {
-  let script_results = await browser.scripting.executeScript({
-    target: { tabId: tab.id },
-    func: (query) => {
-      return window.matchMedia(query).matches;
-    },
-    args: [query],
-  });
-
-  return { matches: script_results[0].result };
-};
-
-/**
- * Lame variant of the above `matchMedia`, because the above always needs to wait till the page is loaded.
- * @param {import("webextension-polyfill-ts").Tabs.Tab} tab
- * @param {string} query
- */
-let matchMedia_faster = async (tab, query) => {
-  let key = `matchMedia(${query})`;
-  let fast_result = await get(key);
-
-  if (fast_result != null) {
-    // Still fetch (and more importantly, update the cache!)
-    async(async () => {
-      let result = await matchMedia(tab, query);
-      await set({ [key]: result });
-    });
-
-    return fast_result;
-  }
-
-  let result = await matchMedia(tab, query);
-
-  set({ [key]: result });
-  return result;
-};
 
 /**
  * Tries to figure out the default icon color
  * - Tries to use the current theme on firefox
  * - Else defaults to light and dark mode
- * @param {import("webextension-polyfill-ts").Tabs.Tab} tab
+ * @param {chrome.tabs.Tab} tab
  * @returns {Promise<string>}
  */
 let icon_theme_color = async (tab) => {
@@ -138,13 +56,12 @@ let icon_theme_color = async (tab) => {
     if (theme?.colors?.popup_text != null) {
       return theme.colors.popup_text;
     }
-    return (await matchMedia_faster(tab, "(prefers-color-scheme: dark)"))
-      .matches
+    return (await matchMedia("(prefers-color-scheme: dark)")).matches
       ? "rgba(255,255,255,0.8)"
       : "rgb(250, 247, 252)";
   }
 
-  return (await matchMedia_faster(tab, "(prefers-color-scheme: dark)")).matches
+  return (await matchMedia("(prefers-color-scheme: dark)")).matches
     ? "rgba(255,255,255,0.8)"
     : "#5f6368";
 };
@@ -178,9 +95,13 @@ let apply_browser_action = async (tabId, action) => {
 };
 
 /**
- * @param {import("webextension-polyfill-ts").Tabs.Tab} tab
+ * @param {chrome.tabs.Tab} tab
  */
 let update_button_on_tab = async (tab) => {
+  if (tab.id == null || tab.url == null) {
+    throw new Error("tab.id == null || tab.url == null");
+  }
+
   let has_contentscript_active =
     tab.status === "complete" && (await ping_content_script(tab.id));
 
@@ -189,7 +110,7 @@ let update_button_on_tab = async (tab) => {
   if (has_contentscript_active === false && tab.url === "about:blank") {
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, await icon_theme_color(tab)),
-      title: `Select Some`,
+      title: `SelectSome`,
     });
     return;
   }
@@ -203,7 +124,8 @@ let update_button_on_tab = async (tab) => {
       tab.url.match(/^chrome:\/\//) ||
       tab.url.match(/^edge:\/\//) ||
       tab.url.match(/^https?:\/\/chrome\.google\.com/) ||
-      tab.url.match(/^https?:\/\/support\.mozilla\.org/))
+      tab.url.match(/^https?:\/\/support\.mozilla\.org/) ||
+      tab.url.match(/^https?:\/\/addons.mozilla.org/))
   ) {
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, "rgba(208, 2, 27, .22)"),
@@ -213,23 +135,18 @@ let update_button_on_tab = async (tab) => {
   }
 
   // So if the tab is loaded, and it is not an extra secure domain,
-  // it means windowed is not loaded for some reason. So I tell that.
+  // it means SelectSome is not loaded for some reason. So I tell that.
   if (tab.status === "complete" && has_contentscript_active === false) {
-    // await apply_browser_action(tab.id, {
-    //   icon: await tint_image(BROWSERACTION_ICON, "#D0021B"),
-    //   title:
-    //     "This page needs to be reloaded for SelectSome to activate. Click here to reload.",
-    // });
-
-    // Instead of asking the user to reload the page (as they should with Windowed),
-    // here I can just inject the script and it'll work! :D
-    browser.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ["Content.js"],
+    /// I used to inject the content script here, but manifest v3 makes that require a bunch of permissions..
+    /// So instead I show a message to the user to reload the page.
+    await apply_browser_action(tab.id, {
+      icon: await tint_image(BROWSERACTION_ICON, "#D0021B"),
+      title: NEEDS_RELOAD_TITLE,
     });
+    return;
   }
 
-  // From here I figure out what the user has configured for Windowed on this domain,
+  // From here I figure out what the user has configured for SelectSome on this domain,
   // and show a specific icon and title for each of those.
   let host = new URL(tab.url).host;
   let config = await get_host_config(tab);
@@ -237,20 +154,38 @@ let update_button_on_tab = async (tab) => {
     // DISABLED
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, "rgba(133, 133, 133, 0.5)"),
-      title: `Select Some is disabled on ${host}, click to re-activate`,
+      title: `SelectSome is disabled on ${host}, click to re-activate`,
     });
     await notify_tab_state(tab.id, { disabled: true });
   } else {
     // ENABLED FUNCTION
     await apply_browser_action(tab.id, {
       icon: await tint_image(BROWSERACTION_ICON, await icon_theme_color(tab)),
-      title: `Select Some is enabled on ${host}`,
+      title: `SelectSome is enabled on ${host}`,
     });
     await notify_tab_state(tab.id, { disabled: false });
   }
 };
 
+/**
+ * @param {chrome.tabs.Tab} tab
+ */
+let getActionTitle = async (tab) => {
+  return new Promise((resolve) => {
+    browser.action.getTitle({ tabId: tab.id }, resolve);
+  });
+};
+
 browser.action.onClicked.addListener(async (tab) => {
+  if (tab.id == null || tab.url == null) {
+    throw new Error("tab.id == null || tab.url == null");
+  }
+
+  if ((await getActionTitle(tab)) === NEEDS_RELOAD_TITLE) {
+    browser.tabs.reload(tab.id);
+    return;
+  }
+
   let host = new URL(tab.url).host;
   let { [host]: previous_config } = await browser.storage.sync.get(host);
   await browser.storage.sync.set({
@@ -264,8 +199,6 @@ browser.action.onClicked.addListener(async (tab) => {
 
 // Events where I refresh the browser action button
 browser.runtime.onInstalled.addListener(async () => {
-  clear(); // Clear cache and colors and everything
-
   let all_tabs = await browser.tabs.query({});
   for (let tab of all_tabs) {
     await update_button_on_tab(tab);
