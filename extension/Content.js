@@ -125,12 +125,12 @@ let get_selection_possibly_in_shadowroot = (document) => {
 
 /**
  * @param {DocumentOrShadowRoot} document
- * @returns {Element}
+ * @returns {Element | null}
  */
 let get_active_element = (document) => {
   let activeElement = document.activeElement;
 
-  if (activeElement.shadowRoot != null) {
+  if (activeElement?.shadowRoot != null) {
     return get_active_element(activeElement.shadowRoot);
   } else {
     return activeElement;
@@ -149,16 +149,18 @@ let config = {
 
 let is_mac = navigator.platform.match(/(Mac|iPhone|iPod|iPad)/i);
 
-document.addEventListener(
+window.addEventListener(
   "keydown",
   function BetterSelectAllKeyboardListener(event) {
     if (config.disabled) return;
+    if (event.repeat) return;
 
     if (event.key === "a" && (is_mac ? event.metaKey : event.ctrlKey)) {
       if (event.defaultPrevented) return;
 
       let activeElement = get_active_element(document);
       if (
+        activeElement == null ||
         activeElement.tagName === "TEXTAREA" ||
         activeElement.tagName === "INPUT" ||
         activeElement.tagName === "IFRAME"
@@ -167,8 +169,9 @@ document.addEventListener(
       }
 
       let selection = get_selection_possibly_in_shadowroot(document);
-      if (selection.rangeCount === 0) return;
-      let original_range = get_current_range(selection).cloneRange();
+      let range = get_current_range(selection);
+      if (range == null) return;
+      let original_range = range.cloneRange();
 
       // let parent = get_naive_selection_parent(selection);
       let parent =
@@ -260,7 +263,7 @@ document.addEventListener(
 try {
   // @ts-ignore
   const browser = /** @type {import("webextension-polyfill-ts").Browser} */ (
-    globalThis.browser
+    globalThis.chrome
   );
   /**
    * @param {{ type: string, [key: string]: any }} message
@@ -287,7 +290,7 @@ try {
    */
   let get_host_config_local = async () => {
     return await send_chrome_message({
-      type: "get_windowed_config",
+      type: "get_selectsome_config",
     });
   };
   let check_disabled_state = async () => {
@@ -295,7 +298,7 @@ try {
       config = await get_host_config_local();
     } catch (err) {
       // prettier-ignore
-      console.warn(`[Windowed] Error while checking if windowed is enabled or not`, err)
+      console.warn(`[SelectSome] Error while checking if SelectSome is enabled or not`, err)
     }
   };
 

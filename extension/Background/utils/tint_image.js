@@ -41,6 +41,21 @@ let find_and_replace_alpha = (color) => {
 let color_icon_cache = new Map();
 
 /**
+ * Just a helper to make typescript happy
+ *
+ * @template T
+ * @param {T} x
+ * @returns {NonNullable<T>}
+ */
+let notnull = (x) => {
+  if (x == null) {
+    throw new Error("Expected non-null value");
+  } else {
+    return x;
+  }
+};
+
+/**
  * Colorize an image with the use of a canvas
  * @param {string} url
  * @param {string} color
@@ -49,7 +64,7 @@ let color_icon_cache = new Map();
 export let tint_image = async (url, color) => {
   let identifier = `${url}@${color}`;
   if (color_icon_cache.has(identifier)) {
-    return color_icon_cache.get(identifier);
+    return notnull(await color_icon_cache.get(identifier));
   } else {
     let icon = _color_icon(url, color);
     color_icon_cache.set(identifier, icon);
@@ -64,32 +79,29 @@ export let tint_image = async (url, color) => {
 let _color_icon = async (url, _color) => {
   let { color, alpha } = find_and_replace_alpha(_color);
 
-  let blob = await createImageBitmap(await (await fetch(url)).blob());
+  const blob = await fetch(url).then((r) => r.blob());
+  const fg = await createImageBitmap(blob);
 
-  let canvas = document.createElement("canvas");
-  canvas.width = blob.width;
-  canvas.height = blob.height;
+  let canvas = new OffscreenCanvas(fg.height, fg.width);
 
   // Initaliase a 2-dimensional drawing context
-  let ctx = canvas.getContext("2d");
+  let ctx = notnull(canvas.getContext("2d"));
   let width = ctx.canvas.width;
   let height = ctx.canvas.height;
 
   // create offscreen buffer,
-  let buffer = document.createElement("canvas");
-  buffer.width = blob.width;
-  buffer.height = blob.height;
+  let buffer = new OffscreenCanvas(fg.width, fg.height);
 
-  let bx = buffer.getContext("2d");
+  let bx = notnull(buffer.getContext("2d"));
   // fill offscreen buffer with the tint color
   bx.fillStyle = color;
   bx.fillRect(0, 0, buffer.width, buffer.height);
   // destination atop makes a result with an alpha channel identical to fg, but with all pixels retaining their original color *as far as I can tell*
   bx.globalCompositeOperation = "destination-atop";
-  bx.drawImage(blob, 0, 0);
+  bx.drawImage(fg, 0, 0);
 
   // to tint the image, draw it first
-  ctx.drawImage(blob, 0, 0);
+  ctx.drawImage(fg, 0, 0);
   ctx.drawImage(buffer, 0, 0);
 
   ctx.globalAlpha = alpha;
